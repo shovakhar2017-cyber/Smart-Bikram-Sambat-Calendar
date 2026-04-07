@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Nepali Calendar - Blogspot Edition</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Libraries -->
+    <script src="https://unpkg.com/nepali-date-converter/dist/nepali-date-converter.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Custom scrollbar for dark mode */
+        .dark ::-webkit-scrollbar {
+            width: 8px;
+        }
+        .dark ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Animation for swipe */
+        .calendar-grid {
+            touch-action: pan-y pinch-zoom;
+        }
+
+        .vertical-text {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+    </style>
+
+    <script>
+        // Tailwind Configuration
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rose: {
+                            50: '#fff1f2',
+                            100: '#ffe4e6',
+                            200: '#fecdd3',
+                            300: '#fda4af',
+                            400: '#fb7185',
+                            500: '#f43f5e',
+                            600: '#e11d48',
+                            700: '#be123c',
+                            800: '#9f1239',
+                            900: '#881337',
+                            950: '#4c0519',
+                        },
+                    },
+                },
+            },
+        }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+        const { motion, AnimatePresence } = framerMotion;
+
+        // --- UTILS ---
+        const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+        const formatNepaliNumber = (num) => {
+            const nepaliDigits = ['०', '१', '२', '३', '४', '५', '६', '७', '८', '९'];
+            return num.toString().split('').map(digit => nepaliDigits[parseInt(digit)] || digit).join('');
+        };
+
+        // --- DATA ---
+        const BS_MONTHS_NP = ['बैशाख', 'जेठ', 'असार', 'साउन', 'भदौ', 'असोज', 'कात्तिक', 'मंसिर', 'पुष', 'माघ', 'फागुन', 'चैत'];
+        const BS_MONTHS_EN = ['Baisakh', 'Jestha', 'Ashadh', 'Shrawan', 'Bhadra', 'Ashwin', 'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra'];
+        const AD_MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const WEEKDAYS_NP = ['आइत', 'सोम', 'मंगल', 'बुध', 'बिही', 'शुक्र', 'शनि'];
+        const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        const TITHIS_NP = [
+            'प्रतिपदा', 'द्वितीया', 'तृतीया', 'चतुर्थी', 'पञ्चमी', 'षष्ठी', 'सप्तमी', 'अष्टमी', 'नवमी', 'दशमी', 'एकादशी', 'द्वादशी', 'त्रयोदशी', 'चतुर्दशी', 'पूर्णिमा', 'औंसी'
+        ];
+
+        const NAKSHATRAS_NP = [
+            'अश्विनी', 'भरणी', 'कृत्तिका', 'रोहिणी', 'मृगशिरा', 'आर्द्रा', 'पुनर्वसु', 'पुष्य', 'अश्लेषा', 'मघा', 'पूर्वाफाल्गुनी', 'उत्तराफाल्गुनी', 'हस्त', 'चित्रा', 'स्वाती', 'विशाखा', 'अनुराधा', 'ज्येष्ठा', 'मूल', 'पूर्वाषाढा', 'उत्तराषाढा', 'श्रवण', 'धनिष्ठा', 'शतभिषा', 'पूर्वाभाद्रपदा', 'उत्तराभाद्रपदा', 'रेवती'
+        ];
+
+        const YOGAS_NP = [
+            'विष्कुम्भ', 'प्रीति', 'आयुष्मान्', 'सौभाग्य', 'शोभन', 'अतिगण्ड', 'सुकर्मा', 'धृति', 'शूल', 'गण्ड', 'वृद्धि', 'ध्रुव', 'व्याघात', 'हर्षण', 'वज्र', 'असृक्', 'व्यतीपात', 'वरीयान्', 'परिघ', 'शिव', 'सिद्ध', 'साध्य', 'शुभ', 'शुक्ल', 'ब्रह्म', 'ऐन्द्र', 'वैधृति'
+        ];
+
+        const getPanchanga = (year, month, day) => {
+            // Simplified astronomical calculation for Tithi
+            // Based on average lunar cycle (29.53 days)
+            const adDate = new NepaliDate(year, month, day).toJsDate();
+            const baseDate = new Date(2026, 3, 17); // April 17, 2026 is Amavasya (New Moon)
+            const diffTime = adDate.getTime() - baseDate.getTime();
+            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+            const lunarCycle = 29.530588;
+            const age = (diffDays % lunarCycle + lunarCycle) % lunarCycle;
+            const tithiNumber = Math.floor((age / lunarCycle) * 30) + 1;
+            
+            const tithi = TITHIS_NP[(tithiNumber - 1) % 30];
+            
+            // Simplified Nakshatra (27.32 days cycle)
+            const siderealMonth = 27.321661;
+            const nakshatraAge = (diffDays % siderealMonth + siderealMonth) % siderealMonth;
+            const nakshatra = NAKSHATRAS_NP[Math.floor((nakshatraAge / siderealMonth) * 27) % 27];
+            
+            // Simplified Yoga
+            const yoga = YOGAS_NP[(tithiNumber + Math.floor(nakshatraAge)) % 27];
+
+            const events = [];
+            const dayOfWeek = adDate.getDay();
+            if (dayOfWeek === 2 && tithiNumber === 4) events.push('मंगलचौथी व्रत');
+            
+            // Sample date events
+            if (year === 2083 && month === 0 && day === 8) {
+                events.push('छन्द दिवस');
+                events.push('आद्यगुरु शंकराचार्य जयन्ती');
+                events.push('श्री मच्छिन्द्रनाथ रथ यात्रा प्रारम्भ');
+            }
+
+            return { tithi, nakshatra, yoga, events };
+        };
+
+        const HOLIDAYS_2083 = [
+            { date: '2083-01-01', nameNp: 'नयाँ वर्ष', nameEn: 'New Year', descriptionNp: 'विक्रम संवतको नयाँ वर्षको पहिलो दिन।', descriptionEn: 'The first day of the new year in the Bikram Sambat calendar.', isPublic: true },
+            { date: '2083-01-11', nameNp: 'लोकतन्त्र दिवस', nameEn: 'Loktantra Diwas', descriptionNp: 'नेपालमा लोकतन्त्र स्थापना भएको दिनको सम्झनामा मनाइने दिवस।', descriptionEn: 'A day to commemorate the restoration of democracy in Nepal.', isPublic: true },
+            { date: '2083-02-15', nameNp: 'गणतन्त्र दिवस', nameEn: 'Republic Day', descriptionNp: 'नेपाल संघीय लोकतान्त्रिक गणतन्त्र घोषणा भएको दिन।', descriptionEn: 'The day Nepal was declared a Federal Democratic Republic.', isPublic: true },
+            { date: '2083-06-03', nameNp: 'संविधान दिवस', nameEn: 'Constitution Day', descriptionNp: 'नेपालको नयाँ संविधान जारी भएको दिन।', descriptionEn: 'The day the new constitution of Nepal was promulgated.', isPublic: true },
+            { date: '2083-07-10', nameNp: 'दशैं (फूलपाती)', nameEn: 'Dashain (Phulpati)', descriptionNp: 'बडा दशैंको सातौं दिन, फूलपाती भित्र्याउने दिन।', descriptionEn: 'The seventh day of Dashain, marked by the Phulpati ceremony.', isPublic: true },
+            { date: '2083-07-11', nameNp: 'दशैं (अष्टमी)', nameEn: 'Dashain (Ashtami)', descriptionNp: 'बडा दशैंको आठौं दिन, महाअष्टमी।', descriptionEn: 'The eighth day of Dashain, Maha Ashtami.', isPublic: true },
+            { date: '2083-07-12', nameNp: 'दशैं (नवमी)', nameEn: 'Dashain (Navami)', descriptionNp: 'बडा दशैंको नवौं दिन, महानवमी।', descriptionEn: 'The ninth day of Dashain, Maha Navami.', isPublic: true },
+            { date: '2083-07-13', nameNp: 'विजया दशमी', nameEn: 'Vijaya Dashami', descriptionNp: 'बडा दशैंको मुख्य दिन, टीका र जमरा लगाउने दिन।', descriptionEn: 'The main day of Dashain, when elders put Tika and Jamara on juniors.', isPublic: true },
+            { date: '2083-07-14', nameNp: 'दशैं (एकादशी)', nameEn: 'Dashain (Ekadashi)', descriptionNp: 'विजया दशमीपछिको एकादशी।', descriptionEn: 'The day after Vijaya Dashami.', isPublic: true },
+            { date: '2083-08-15', nameNp: 'तिहार (लक्ष्मी पूजा)', nameEn: 'Tihar (Laxmi Puja)', descriptionNp: 'तिहारको तेस्रो दिन, धनकी देवी लक्ष्मीको पूजा गरिने दिन।', descriptionEn: 'The third day of Tihar, dedicated to worshipping Goddess Laxmi.', isPublic: true },
+            { date: '2083-08-17', nameNp: 'तिहार (भाई टीका)', nameEn: 'Tihar (Bhai Tika)', descriptionNp: 'तिहारको अन्तिम दिन, दिदीबहिनीले दाजुभाइलाई टीका लगाउने दिन।', descriptionEn: 'The final day of Tihar, celebrating the bond between brothers and sisters.', isPublic: true },
+            { date: '2083-11-07', nameNp: 'प्रजातन्त्र दिवस', nameEn: 'Democracy Day', descriptionNp: 'नेपालमा प्रजातन्त्र स्थापना भएको दिन।', descriptionEn: 'The day democracy was established in Nepal in 1951.', isPublic: true },
+            { date: '2083-12-24', nameNp: 'घोडेजात्रा', nameEn: 'Ghode Jatra', descriptionNp: 'काठमाडौं उपत्यकामा मनाइने परम्परागत घोडा दौड उत्सव।', descriptionEn: 'A traditional horse racing festival celebrated in Kathmandu Valley.', isPublic: true },
+        ];
+
+        const MOTIVATIONAL_QUOTES = [
+            { textNp: "सफलताको रहस्य भनेको काम सुरु गर्नु हो।", textEn: "The secret of getting ahead is getting started.", authorNp: "मार्क ट्वेन", authorEn: "Mark Twain" },
+            { textNp: "जहाँ इच्छा हुन्छ, त्यहाँ उपाय हुन्छ।", textEn: "Where there's a will, there's a way.", authorNp: "नेपाली उखान", authorEn: "Nepali Proverb" },
+            { textNp: "समय नै धन हो।", textEn: "Time is money.", authorNp: "बेन्जामिन फ्र्याङ्कलिन", authorEn: "Benjamin Franklin" },
+            { textNp: "कडा परिश्रमको विकल्प छैन।", textEn: "There is no substitute for hard work.", authorNp: "थोमस एडिसन", authorEn: "Thomas Edison" }
+        ];
+
+        const NEPAL_THEMED_IMAGES = [
+            'https://images.unsplash.com/photo-1544735716-392fe2489ffa?q=80&w=1000&auto=format&fit=crop',
+            'https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=1000&auto=format&fit=crop',
+            'https://images.unsplash.com/photo-1623492701902-47dc207df5dc?q=80&w=1000&auto=format&fit=crop',
+            'https://images.unsplash.com/photo-1605640840605-14ac1855827b?q=80&w=1000&auto=format&fit=crop',
+            'https://images.unsplash.com/photo-1526716173434-a2b566c666df?q=80&w=1000&auto=format&fit=crop',
+            'https://images.unsplash.com/photo-1518002171953-a080ee817e1f?q=80&w=1000&auto=format&fit=crop',
+        ];
+
+        // --- COMPONENTS ---
+
+        const Icon = ({ name, className, style }) => {
+            const [icon, setIcon] = useState(null);
+            useEffect(() => {
+                if (window.lucide) {
+                    const iconElement = window.lucide.icons[name];
+                    if (iconElement) {
+                        // This is a bit hacky for UMD lucide, but it works
+                        setIcon(name);
+                    }
+                }
+            }, [name]);
+
+            if (!icon) return <div className={className} />;
+            
+            // Render lucide icon using dangerouslySetInnerHTML or similar if needed
+            // But simpler is to use the lucide.createIcon if we had a ref.
+            // For this demo, we'll use a simplified SVG approach or just standard icons.
+            return <i data-lucide={name} className={className} style={style}></i>;
+        };
+
+        // Re-run lucide.createIcons() whenever icons might have changed
+        const useLucide = () => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
+        };
+
+        const DayDetailModal = ({ dayData, lang, onClose, isDark }) => {
+            useLucide();
+            const adDate = new NepaliDate(dayData.year, dayData.month, dayData.day).toJsDate();
+            const panchanga = getPanchanga(dayData.year, dayData.month, dayData.day);
+            const dateStr = `${dayData.year}-${String(dayData.month + 1).padStart(2, '0')}-${String(dayData.day).padStart(2, '0')}`;
+            const holiday = HOLIDAYS_2083.find(h => h.date === dateStr);
+
+            return (
+                <motion.div 
+                    initial={{ opacity: 0 }} 
+                    animate={{ opacity: 1 }} 
+                    exit={{ opacity: 0 }} 
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={onClose}
+                >
+                    <motion.div 
+                        initial={{ scale: 0.9, y: 20 }} 
+                        animate={{ scale: 1, y: 0 }} 
+                        exit={{ scale: 0.9, y: 20 }} 
+                        className={cn("w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl", isDark ? "bg-gray-900 border border-gray-800" : "bg-white")}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="p-6 border-b dark:border-gray-800 flex items-center justify-between">
+                            <div className="flex flex-col">
+                                <h3 className="text-xl font-bold flex items-center gap-2">
+                                    <i data-lucide="calendar" className="w-5 h-5 text-rose-500"></i>
+                                    {lang === 'np' ? formatNepaliNumber(dayData.day) : dayData.day} {lang === 'np' ? BS_MONTHS_NP[dayData.month] : BS_MONTHS_EN[dayData.month]} {lang === 'np' ? formatNepaliNumber(dayData.year) : dayData.year}
+                                </h3>
+                                <p className="text-xs text-gray-400 font-medium">
+                                    {adDate.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                </p>
+                            </div>
+                            <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                <i data-lucide="x" className="w-5 h-5"></i>
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+                            {holiday && (
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <h4 className="text-2xl font-bold text-rose-600">{holiday.nameNp}</h4>
+                                        <h5 className="text-lg font-medium text-gray-500 dark:text-gray-400">{holiday.nameEn}</h5>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/20 space-y-3">
+                                        <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">{holiday.descriptionNp}</p>
+                                        <div className="h-px bg-rose-200/50 dark:bg-rose-800/50" />
+                                        <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400 italic">{holiday.descriptionEn}</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700">
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Tithi / तिथि</p>
+                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200">{panchanga.tithi}</p>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700">
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Nakshatra / नक्षत्र</p>
+                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200">{panchanga.nakshatra}</p>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700">
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Yoga / योग</p>
+                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200">{panchanga.yoga}</p>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700">
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">AD Date</p>
+                                    <p className="text-sm font-bold text-gray-700 dark:text-gray-200">{adDate.getDate()} {AD_MONTHS_EN[adDate.getMonth()]}</p>
+                                </div>
+                            </div>
+
+                            {panchanga.events.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold px-1">Events / विशेष उत्सव</p>
+                                    <div className="space-y-2">
+                                        {panchanga.events.map((event, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 p-3 rounded-2xl bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20">
+                                                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                                <p className="text-sm font-bold text-blue-700 dark:text-blue-300">{event}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-6 bg-gray-50 dark:bg-gray-800/50">
+                            <button onClick={onClose} className="w-full py-4 rounded-2xl bg-rose-600 text-white font-bold shadow-lg shadow-rose-600/20 hover:bg-rose-700 transition-colors">
+                                {lang === 'np' ? 'बन्द गर्नुहोस्' : 'Close'}
+                            </button>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            );
+        };
+
+        function App() {
+            useLucide();
+            
+            // State
+            const [currentBSYear, setCurrentBSYear] = useState(2083);
+            const [currentBSMonth, setCurrentBSMonth] = useState(0);
+            const [settings, setSettings] = useState(() => {
+                const saved = localStorage.getItem('calendar-settings');
+                const defaultSettings = {
+                    language: 'np',
+                    theme: 'light',
+                    layout: 'decorative',
+                    imageFit: 'cover',
+                    imageZoom: 1,
+                    customColor: '#e11d48',
+                    monthImages: {},
+                };
+                return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
+            });
+            const [showSettings, setShowSettings] = useState(false);
+            const [showDownloadModal, setShowDownloadModal] = useState(false);
+            const [downloadYear, setDownloadYear] = useState(2083);
+            const [downloadType, setDownloadType] = useState('single');
+            const [isExporting, setIsExporting] = useState(false);
+            const [selectedHoliday, setSelectedHoliday] = useState(null);
+            const [selectedDay, setSelectedDay] = useState(null);
+            const calendarRef = useRef(null);
+
+            useEffect(() => {
+                localStorage.setItem('calendar-settings', JSON.stringify(settings));
+                if (settings.theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }, [settings]);
+
+            const lang = settings.language;
+            const isDark = settings.theme === 'dark';
+            const monthName = lang === 'np' ? BS_MONTHS_NP[currentBSMonth] : BS_MONTHS_EN[currentBSMonth];
+            const yearDisplay = lang === 'np' ? formatNepaliNumber(currentBSYear) : currentBSYear;
+            
+            const getMonthData = () => {
+                const nepaliDate = new NepaliDate(currentBSYear, currentBSMonth, 1);
+                let nextM = currentBSMonth + 1;
+                let nextY = currentBSYear;
+                if (nextM > 11) { nextM = 0; nextY++; }
+                const firstDayNextMonth = new NepaliDate(nextY, nextM, 1);
+                const lastDayThisMonth = new NepaliDate(firstDayNextMonth.toJsDate().getTime() - 24 * 60 * 60 * 1000);
+                const daysInMonth = lastDayThisMonth.getDate();
+                const firstDayWeekday = nepaliDate.getDay();
+                const firstDayAD = nepaliDate.toJsDate();
+                const lastDayAD = lastDayThisMonth.toJsDate();
+                const adRange = `${AD_MONTHS_EN[firstDayAD.getMonth()]} - ${AD_MONTHS_EN[lastDayAD.getMonth()]} ${firstDayAD.getFullYear()}`;
+                return { daysInMonth, firstDayWeekday, adRange };
+            };
+
+            const { daysInMonth, firstDayWeekday, adRange } = getMonthData();
+            const currentMonthImage = settings.monthImages?.[`${currentBSYear}-${currentBSMonth}`] || NEPAL_THEMED_IMAGES[currentBSMonth % NEPAL_THEMED_IMAGES.length];
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setSettings(prev => ({
+                            ...prev,
+                            monthImages: { ...(prev.monthImages || {}), [`${currentBSYear}-${currentBSMonth}`]: reader.result }
+                        }));
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const removeImage = () => {
+                setSettings(prev => {
+                    const newImages = { ...(prev.monthImages || {}) };
+                    delete newImages[`${currentBSYear}-${currentBSMonth}`];
+                    return { ...prev, monthImages: newImages };
+                });
+            };
+
+            const nextMonth = () => {
+                if (currentBSMonth === 11) { setCurrentBSMonth(0); setCurrentBSYear(prev => prev + 1); }
+                else { setCurrentBSMonth(prev => prev + 1); }
+            };
+
+            const prevMonth = () => {
+                if (currentBSMonth === 0) { setCurrentBSMonth(11); setCurrentBSYear(prev => prev - 1); }
+                else { setCurrentBSMonth(prev => prev - 1); }
+            };
+
+            const nextYear = () => setCurrentBSYear(prev => prev + 1);
+            const prevYear = () => setCurrentBSYear(prev => prev - 1);
+
+            const exportPDF = async (year, month) => {
+                setIsExporting(true);
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const monthsToExport = month !== undefined ? [month] : Array.from({ length: 12 }, (_, i) => i);
+                const originalYear = currentBSYear;
+                const originalMonth = currentBSMonth;
+
+                try {
+                    for (let i = 0; i < monthsToExport.length; i++) {
+                        const m = monthsToExport[i];
+                        setCurrentBSYear(year);
+                        setCurrentBSMonth(m);
+                        await new Promise(resolve => setTimeout(resolve, 800));
+                        if (calendarRef.current) {
+                            const canvas = await html2canvas(calendarRef.current, {
+                                scale: 2,
+                                useCORS: true,
+                                backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                                logging: false
+                            });
+                            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                            if (i > 0) pdf.addPage();
+                            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                        }
+                    }
+                    pdf.save(`Smart_Calendar_${year}.pdf`);
+                } catch (err) {
+                    console.error('Export failed:', err);
+                } finally {
+                    setCurrentBSYear(originalYear);
+                    setCurrentBSMonth(originalMonth);
+                    setIsExporting(false);
+                    setShowDownloadModal(false);
+                }
+            };
+
+            const primaryColor = settings.customColor || '#e11d48';
+
+            return (
+                <div className={cn("min-h-screen transition-colors duration-300", isDark ? "bg-gray-950 text-gray-100" : "bg-gray-50 text-gray-900")}>
+                    <header className={cn("sticky top-0 z-40 backdrop-blur-md border-b px-4 py-3 flex items-center justify-between", isDark ? "bg-gray-950/80 border-gray-800" : "bg-white/80 border-gray-200")}>
+                        <div className="flex items-center gap-2">
+                            <i data-lucide="calendar" className="w-6 h-6" style={{ color: primaryColor }}></i>
+                            <h1 className="text-xl font-bold tracking-tight">{lang === 'np' ? 'स्मार्ट पात्रो' : 'Smart Calendar'}</h1>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => { const d = new NepaliDate(); setCurrentBSYear(d.getYear()); setCurrentBSMonth(d.getMonth()); }} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"><i data-lucide="calendar-days" className="w-5 h-5"></i></button>
+                            <button onClick={() => setSettings(prev => ({ ...prev, language: lang === 'np' ? 'en' : 'np' }))} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"><i data-lucide="languages" className="w-5 h-5"></i></button>
+                            <button onClick={() => setSettings(prev => ({ ...prev, theme: isDark ? 'light' : 'dark' }))} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">{isDark ? <i data-lucide="sun" className="w-5 h-5"></i> : <i data-lucide="moon" className="w-5 h-5"></i>}</button>
+                            <button onClick={() => setShowSettings(true)} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"><i data-lucide="settings" className="w-5 h-5"></i></button>
+                            <button onClick={() => setShowDownloadModal(true)} disabled={isExporting} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"><i data-lucide="download" className="w-5 h-5"></i></button>
+                        </div>
+                    </header>
+
+                    <main className="max-w-md mx-auto p-4 pb-24">
+                        <div ref={calendarRef} className={cn("rounded-3xl overflow-hidden shadow-2xl transition-all duration-500", isDark ? "bg-gray-900 border border-gray-800" : "bg-white border border-gray-100", settings.layout === 'decorative' ? "p-1" : "p-0")}>
+                            <div className="relative h-48 sm:h-56 overflow-hidden group bg-gray-100 dark:bg-gray-800">
+                                <img src={currentMonthImage} alt="Cover" className={cn("w-full h-full transition-transform duration-300", settings.imageFit === 'contain' ? "object-contain" : "object-cover")} style={{ transform: `scale(${settings.imageZoom || 1})` }} />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between">
+                                    <div>
+                                        <h2 className="text-3xl font-bold text-white drop-shadow-lg">{monthName} {yearDisplay}</h2>
+                                        <p className="text-white/80 text-sm font-medium drop-shadow-md">{adRange}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setSettings(prev => ({ ...prev, imageFit: prev.imageFit === 'contain' ? 'cover' : 'contain' }))} className="p-2 bg-white/20 backdrop-blur-md rounded-full hover:bg-white/40 transition-colors">{settings.imageFit === 'contain' ? <i data-lucide="maximize" className="w-5 h-5 text-white"></i> : <i data-lucide="minimize" className="w-5 h-5 text-white"></i>}</button>
+                                        {settings.monthImages?.[`${currentBSYear}-${currentBSMonth}`] && <button onClick={removeImage} className="p-2 bg-rose-500/80 backdrop-blur-md rounded-full hover:bg-rose-600 transition-colors"><i data-lucide="x" className="w-5 h-5 text-white"></i></button>}
+                                        <label className="p-2 bg-white/20 backdrop-blur-md rounded-full cursor-pointer hover:bg-white/40 transition-colors"><i data-lucide="image" className="w-5 h-5 text-white"></i><input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} /></label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between px-4 py-4 border-b dark:border-gray-800">
+                                <div className="flex gap-1">
+                                    <button onClick={prevYear} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><i data-lucide="chevrons-left" className="w-5 h-5"></i></button>
+                                    <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><i data-lucide="chevron-left" className="w-5 h-5"></i></button>
+                                </div>
+                                <div className="text-center"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">{lang === 'np' ? 'नेभिगेसन' : 'Navigation'}</span></div>
+                                <div className="flex gap-1">
+                                    <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><i data-lucide="chevron-right" className="w-5 h-5"></i></button>
+                                    <button onClick={nextYear} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><i data-lucide="chevrons-right" className="w-5 h-5"></i></button>
+                                </div>
+                            </div>
+
+                            <div className="p-4 grid grid-cols-7 gap-1">
+                                {(lang === 'np' ? WEEKDAYS_NP : WEEKDAYS_EN).map((day, i) => (
+                                    <div key={day} className={cn("text-center text-xs font-bold py-2", i === 6 ? "text-rose-600" : "text-gray-400")}>{day}</div>
+                                ))}
+                                {Array.from({ length: firstDayWeekday }).map((_, i) => <div key={`empty-${i}`} />)}
+                                {Array.from({ length: daysInMonth }).map((_, i) => {
+                                    const day = i + 1;
+                                    const dateStr = `${currentBSYear}-${String(currentBSMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                    const holiday = HOLIDAYS_2083.find(h => h.date === dateStr);
+                                    const isToday = new NepaliDate().getYear() === currentBSYear && new NepaliDate().getMonth() === currentBSMonth && new NepaliDate().getDate() === day;
+                                    const isSaturday = (firstDayWeekday + i) % 7 === 6;
+                                    const panchanga = getPanchanga(currentBSYear, currentBSMonth, day);
+                                    const adDay = new NepaliDate(currentBSYear, currentBSMonth, day).toJsDate().getDate();
+
+                                    return (
+                                        <motion.button 
+                                            key={day} 
+                                            whileHover={{ scale: 1.05 }} 
+                                            whileTap={{ scale: 0.95 }} 
+                                            onClick={() => {
+                                                setSelectedDay({ day, month: currentBSMonth, year: currentBSYear });
+                                            }} 
+                                            className={cn(
+                                                "relative h-14 flex flex-col items-center justify-center rounded-xl transition-all overflow-hidden", 
+                                                isToday ? "bg-rose-600 text-white shadow-lg shadow-rose-600/30" : "hover:bg-gray-100 dark:hover:bg-gray-800", 
+                                                holiday?.isPublic || isSaturday ? "text-rose-600 dark:text-rose-400" : ""
+                                            )}
+                                        >
+                                            <div className="absolute top-0.5 left-0 right-0 text-[7px] text-center opacity-70 font-medium truncate px-0.5">
+                                                {panchanga.tithi}
+                                            </div>
+                                            
+                                            <div className="absolute left-0.5 top-1/2 -translate-y-1/2 text-[6px] opacity-40 font-medium vertical-text hidden sm:block">
+                                                {panchanga.nakshatra}
+                                            </div>
+
+                                            <div className="absolute right-0.5 top-1/2 -translate-y-1/2 text-[6px] opacity-40 font-medium vertical-text hidden sm:block">
+                                                {panchanga.yoga}
+                                            </div>
+
+                                            <span className="text-lg font-bold leading-none z-10">
+                                                {lang === 'np' ? formatNepaliNumber(day) : day}
+                                            </span>
+                                            
+                                            <span className="text-[9px] opacity-60 mt-0.5 z-10">
+                                                {adDay}
+                                            </span>
+
+                                            {/* Events Indicator */}
+                                            {panchanga.events.length > 0 && (
+                                                <div className="absolute bottom-1 flex gap-0.5">
+                                                    {panchanga.events.map((_, idx) => (
+                                                        <div key={idx} className="w-1 h-1 rounded-full bg-blue-500" />
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {holiday && <div className="absolute top-1 right-1 w-1 h-1 rounded-full bg-current z-20" />}
+                                        </motion.button>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="p-6 bg-gray-50 dark:bg-gray-800/50 border-t dark:border-gray-800">
+                                <div className="flex items-start gap-4">
+                                    <div className="p-3 bg-white dark:bg-gray-900 rounded-2xl shadow-sm"><i data-lucide="quote" className="w-5 h-5 text-rose-500"></i></div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-medium italic leading-relaxed text-gray-600 dark:text-gray-300">"{lang === 'np' ? MOTIVATIONAL_QUOTES[currentBSMonth % MOTIVATIONAL_QUOTES.length].textNp : MOTIVATIONAL_QUOTES[currentBSMonth % MOTIVATIONAL_QUOTES.length].textEn}"</p>
+                                        <p className="text-xs font-bold mt-2 text-rose-600 dark:text-rose-400">— {lang === 'np' ? MOTIVATIONAL_QUOTES[currentBSMonth % MOTIVATIONAL_QUOTES.length].authorNp : MOTIVATIONAL_QUOTES[currentBSMonth % MOTIVATIONAL_QUOTES.length].authorEn}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
+                    <AnimatePresence>
+                        {selectedDay && <DayDetailModal dayData={selectedDay} lang={lang} isDark={isDark} onClose={() => setSelectedDay(null)} />}
+                    </AnimatePresence>
+                    
+                    <AnimatePresence>
+                        {showSettings && (
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
+                                <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="bg-white dark:bg-gray-900 w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                                    <div className="p-6 border-b dark:border-gray-800 flex justify-between items-center">
+                                        <h3 className="text-xl font-bold flex items-center gap-2"><i data-lucide="settings" className="w-5 h-5"></i>{lang === 'np' ? 'सेटिङहरू' : 'Settings'}</h3>
+                                        <button onClick={() => setShowSettings(false)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><i data-lucide="x" className="w-5 h-5"></i></button>
+                                    </div>
+                                    <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                                        <div className="space-y-3">
+                                            <label className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2"><i data-lucide="sun" className="w-4 h-4"></i>{lang === 'np' ? 'थिम' : 'Theme'}</label>
+                                            <div className="flex gap-2">{['light', 'dark'].map(t => <button key={t} onClick={() => setSettings(prev => ({ ...prev, theme: t }))} className={cn("flex-1 py-3 rounded-2xl border-2 transition-all font-medium capitalize", settings.theme === t ? "border-rose-500 bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" : "border-transparent bg-gray-100 dark:bg-gray-800 text-gray-500")}>{t}</button>)}</div>
+                                        </div>
+                                        <div className="space-y-4 pt-4 border-t dark:border-gray-800">
+                                            <label className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2"><i data-lucide="image" className="w-4 h-4"></i>{lang === 'np' ? 'फोटो सेटिङ' : 'Photo Settings'}</label>
+                                            <div className="space-y-3">
+                                                <label className="text-xs text-gray-400">{lang === 'np' ? 'फोटो साइज' : 'Photo Size'}</label>
+                                                <div className="flex gap-2">
+                                                    {['cover', 'contain'].map(f => <button key={f} onClick={() => setSettings(prev => ({ ...prev, imageFit: f }))} className={cn("flex-1 py-2 rounded-xl border-2 transition-all text-sm font-medium", settings.imageFit === f ? "border-rose-500 bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" : "border-transparent bg-gray-100 dark:bg-gray-800 text-gray-500")}>{f === 'cover' ? (lang === 'np' ? 'क्रप' : 'Crop') : (lang === 'np' ? 'फिट' : 'Fit')}</button>)}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-center"><label className="text-xs text-gray-400">{lang === 'np' ? 'जुम' : 'Zoom'}</label><span className="text-xs font-mono text-rose-500">{Math.round((settings.imageZoom || 1) * 100)}%</span></div>
+                                                <div className="flex items-center gap-3">
+                                                    <button onClick={() => setSettings(prev => ({ ...prev, imageZoom: Math.max(0.5, (prev.imageZoom || 1) - 0.1) }))} className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"><i data-lucide="minus" className="w-4 h-4"></i></button>
+                                                    <input type="range" min="0.5" max="3" step="0.1" value={settings.imageZoom || 1} onChange={e => setSettings(prev => ({ ...prev, imageZoom: parseFloat(e.target.value) }))} className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-rose-500" />
+                                                    <button onClick={() => setSettings(prev => ({ ...prev, imageZoom: Math.min(3, (prev.imageZoom || 1) + 0.1) }))} className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"><i data-lucide="plus" className="w-4 h-4"></i></button>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => setSettings(prev => ({ ...prev, imageFit: 'cover', imageZoom: 1 }))} className="w-full py-2 text-xs font-semibold text-rose-500 hover:text-rose-600 transition-colors">{lang === 'np' ? 'फोटो सेटिङ रिसेट गर्नुहोस्' : 'Reset Photo Settings'}</button>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{lang === 'np' ? 'मुख्य रङ' : 'Primary Color'}</label>
+                                            <div className="flex gap-3">{['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed'].map(color => <button key={color} onClick={() => setSettings(prev => ({ ...prev, customColor: color }))} className={cn("w-10 h-10 rounded-full border-4 transition-all", settings.customColor === color ? "border-white ring-2 ring-gray-300" : "border-transparent")} style={{ backgroundColor: color }} />)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="p-6 bg-gray-50 dark:bg-gray-800/50"><button onClick={() => setShowSettings(false)} className="w-full py-4 rounded-2xl text-white font-bold shadow-lg transition-colors" style={{ backgroundColor: primaryColor }}>{lang === 'np' ? 'बचत गर्नुहोस्' : 'Save & Close'}</button></div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    <AnimatePresence>
+                        {showDownloadModal && (
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowDownloadModal(false)}>
+                                <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+                                    <div className="p-6 border-b dark:border-gray-800 flex justify-between items-center"><h3 className="text-xl font-bold flex items-center gap-2"><i data-lucide="download" className="w-5 h-5"></i>{lang === 'np' ? 'पात्रो डाउनलोड' : 'Download Calendar'}</h3><button onClick={() => setShowDownloadModal(false)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><i data-lucide="x" className="w-5 h-5"></i></button></div>
+                                    <div className="p-8 space-y-6">
+                                        <div className="space-y-3"><label className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{lang === 'np' ? 'वर्ष छान्नुहोस्' : 'Select Year'}</label><div className="flex gap-2">{[2081, 2082, 2083, 2084].map(y => <button key={y} onClick={() => setDownloadYear(y)} className={cn("flex-1 py-2 rounded-xl border-2 transition-all font-medium", downloadYear === y ? "border-rose-500 bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" : "border-transparent bg-gray-100 dark:bg-gray-800 text-gray-500")}>{lang === 'np' ? formatNepaliNumber(y) : y}</button>)}</div></div>
+                                        <div className="space-y-3"><label className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{lang === 'np' ? 'प्रकार' : 'Type'}</label><div className="flex flex-col gap-2"><button onClick={() => setDownloadType('single')} className={cn("w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-left flex justify-between items-center", downloadType === 'single' ? "border-rose-500 bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" : "border-transparent bg-gray-100 dark:bg-gray-800 text-gray-500")}><span>{lang === 'np' ? 'यो महिना मात्र' : 'This Month Only'}</span>{downloadType === 'single' && <i data-lucide="check" className="w-4 h-4"></i>}</button><button onClick={() => setDownloadType('full')} className={cn("w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-left flex justify-between items-center", downloadType === 'full' ? "border-rose-500 bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" : "border-transparent bg-gray-100 dark:bg-gray-800 text-gray-500")}><span>{lang === 'np' ? 'पूरा वर्ष (१२ महिना)' : 'Full Year (12 Months)'}</span>{downloadType === 'full' && <i data-lucide="check" className="w-4 h-4"></i>}</button></div></div>
+                                        <button onClick={() => exportPDF(downloadYear, downloadType === 'single' ? currentBSMonth : undefined)} disabled={isExporting} className="w-full py-4 rounded-2xl text-white font-bold shadow-lg flex items-center justify-center gap-2 transition-all" style={{ backgroundColor: primaryColor }}>{isExporting ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />{lang === 'np' ? 'तयार हुँदैछ...' : 'Preparing...'}</> : <><i data-lucide="file-text" className="w-5 h-5"></i>{lang === 'np' ? 'PDF डाउनलोड गर्नुहोस्' : 'Download PDF'}</>}</button>
+                                    </div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
